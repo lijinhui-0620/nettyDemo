@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket客户端</title>
+</head>
+<body>
+<script type="text/javascript">
+    var lockReconnect = true;
+
+    function reconnect() {
+        if (lockReconnect) return;
+        lockReconnect = true;
+        setTimeout(function () {     //没连接上会一直重连，设置延迟避免请求过多
+            createWebSocket();
+            lockReconnect = false;
+        }, 2000);
+    }
+
+    var socket;
+
+    function createWebSocket() {
+        if (window.WebSocket) {
+            socket = new WebSocket("ws://localhost:7000/ws");
+            socket.onmessage = function (event) {
+                document.getElementById("responseText").value = (document.getElementById("responseText").value + '\n' + event.data);
+            }
+            socket.onopen = function (event) {
+                var t = document.getElementById("responseText");
+                t.value = "连接开启";
+            }
+            socket.onclose = function (event) {
+                var t = document.getElementById("responseText");
+                t.value = t.value + "\n" + "断开连接,尝试重连中...";
+                lockReconnect = false;
+                reconnect();
+            }
+            socket.onerror = function (ev) {
+                socket.close(ev);
+            }
+        } else {
+            alert("浏览器不支持webSocket！");
+        }
+    }
+
+    createWebSocket();
+
+
+    function send(msg) {
+        if (!window.WebSocket) {
+            return;
+        }
+        if (socket.readyState == WebSocket.OPEN) {
+            socket.send(msg);
+        } else {
+            alert('连接尚未开启');
+        }
+    }
+
+</script>
+<form onsubmit="return false;">
+    <textarea id="message" name="message" style="width: 400px;height: 200px;"></textarea>
+    <input type="button" value="发送" onclick="send(this.form.message.value)">
+    <h3>服务端输出</h3>
+    <textarea id="responseText" style="width: 400px;height: 200px;"></textarea>
+    <input type="button" onclick="javascript:document.getElementById('responseText').value=''" value="清除">
+</form>
+</body>
+</html>
