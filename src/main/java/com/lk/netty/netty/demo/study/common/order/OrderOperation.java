@@ -1,10 +1,6 @@
 package com.lk.netty.netty.demo.study.common.order;
 
-import com.alibaba.fastjson.JSON;
 import com.lk.netty.netty.demo.study.common.Operation;
-import com.lk.netty.netty.demo.study.common.RequestMessage;
-import com.lk.netty.netty.demo.study.util.IdUtil;
-import com.lk.netty.netty.demo.study.util.JsonUtil;
 
 /**
  * @auther: kim
@@ -18,12 +14,6 @@ public class OrderOperation extends Operation {
     public OrderOperation(int tableId, String dish) {
         this.tableId = tableId;
         this.dish = dish;
-    }
-
-    public static void main(String[] args) {
-        System.out.println(JSON.toJSONString( new OrderOperation(1001, "tudou")));
-        System.out.println(JsonUtil.toJson( new OrderOperation(1001, "tudou")));
-        System.out.println(JSON.toJSONString(new RequestMessage(IdUtil.nextId(), new OrderOperation(1001, "tudou"))));
     }
 
     @Override

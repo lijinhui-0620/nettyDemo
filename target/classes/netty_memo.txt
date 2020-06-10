@@ -1,0 +1,246 @@
+1.一个EventLoopGroup包含一个或多个EventLoop。
+2.一个EventLoop整个生命周期中只会与一个Thread绑定。
+3.所有由EventLoop所处理的各种I/O事件都将在它锁关联的那个Thread上进行。
+4.一个Channel在它的整个生命周期中只会注册在一个EventLoop上。
+5.一个EventLoop在运行过程中，会被分配给一个或多个Channel。
+
+结论：1.在Netty中，Channel的实现是线程安全的。	
+          2.在业务开发中，不要将长时间的耗时操作放在EventLoop的执行队列中，因为会阻塞该线程所对应的多有Channel上的其他任务，如果需要执行耗时操作，
+通常会放到另外的线程里。
+		常用的解决方法：
+			1.在ChannelHandler的回调方法中，使用自定义的业务线程池。
+			2.使用Nety的ChannlePipeline的addLast方法来传递EventExecutor。
+
+
+
+
+JDK提供的Future只能通过手工的方式来检查执行结果，Netty对它进行了增强，通过ChannleFUtureListener已回调的方式来获取执行结果。
+
+
+在Netty中有两种发送消息的方式，1.直接写到Channel中；2.写到与ChannleHandler关联的ChannelHandlerContext中。
+
+Netty ByteBuf提供的3中缓冲区：
+	1.heap buffer
+	2.direct Buffer
+	3.composite buffer
+	
+	
+	
+Heap Buffer(堆缓冲区) 最常用的类型，ByteBuf将数据存储在JVM的堆空间中，并且将实际的数据存在byte array中实现
+
+
+优点：数据存储在JVM中，因此可以快速的创建与快速的释放，并且提供了直接访问内存字节数组的方法
+缺点：每次读写数据，都需要先将数据复制到直接缓冲区中再进行网络传输
+
+Direct Buffer(直接缓冲区) 在堆外直接分配内存空间，直接缓冲区并不会占用堆的空间容量
+
+优点：使用Socket进行数据传递时，性能非常好，因为数据直接位于操作系统的本地内存中，所以不需要从JVM将数据复制到直接缓冲区中，性能很好。
+缺点：因为数据在操作系统中，所以内存空间的分配和释放要比堆空间更加复杂，而且速度要慢一些。
+
+Netty通过提供内存池来解决这个问题。直接缓冲区并不支持通过字节数组的方式来访问数据
+
+建议：对于后端业务的编解码来说，推荐使用HeapByteBuf;对于I/O通信线程在读写缓冲区时，推荐使用DirectByteBuf。
+
+
+ByteBffer与ByteBuf：
+ 1.ByteBuf采用了读写索引分离的策略（readerIndex与writerIndex）
+ 2.当读锁引与写索引处于同一个位置时，如果继续读写就会抛出IndexOutOfBoundsException
+ 3.对于ByteBuf的任何读写操作都会分别维护读锁引和写索引。
+
+
+
+
+TCP粘包与拆包
+	TCP是面向连接的，面向流的，提供高可用性服务。收发两端都要有一一成对的socket，因此，发送端为了将多个发给接收端的包，更有效
+
+
+
+======================================NIO================================================
+Buffer:一个可读写的内存块，改对象提供了一组方法，可以更轻松的使用内存块，缓冲区对象内置了一些机制，能够跟踪和记录缓冲区的状态变化。Channel提供从文件，网络读取数据得通道，
+但是读取或写入必须经过buffer
+
+Channel：
+
+
+
+
+
+mmap 适合小数据量读写，sendFile适合大文件传输
+mmap需要4次上下文切换，3次数据拷贝；sendFile需要3次上下文切换，最少2次数据拷贝
+sendFile可以利用DMA方式，减少CPU拷贝，maap不行（必须从内核拷贝到socket缓冲区）
+
+
+
+单Reactor单线程
+	1.优点：模型简单，没有多线程、进程通信、竞争的问题
+	2.缺点：性能问题，只有一个线程无法发挥多核CPU的性能。Handler在处理某个连接上的业务时，整个进程无法处理其他连接事件，容易导致性能瓶颈。
+	3.缺点：可靠性问题。线程意外终止，或死循环，回导致整个系统通信模块不可用，造成节点故障
+	4.使用场景：客户端的数量有限，业务处理非常快速。
+	
+单Reactor多线程
+	方案说明：
+		1）Reactor对象通过select监控客户端请求事件，收到事件后，通过dispatch进行分发
+		2）如果建立连接请求，则由Acceptor通过accept处理连接请i去，然后创建一个Handler对象处理完成连接后的各种事件
+		3）如果不是连接请求，则由Reactor对象分发调用连接对应的Handler来处理
+		4）Handler只负责响应事件，不做具体的业务处理，同故宫read读取数据后，会分发给后面的worker线程池
+		5）worker线程池会分配单独线程完成真正的业务，并降结果返回给handler
+		6）handler收到响应后，通过sned将结果返回给client
+	优缺点：
+		1）优点：可以充分的利用多核CPU的处理能力
+		2）reactor处理所有的事件的监听和响应，容易造成性能瓶颈，多线程带来的数据的处理更加复杂
+		
+主从Reactor模式
+	方案说明：
+		1）Reactor主线程MainReactor对象通过select监听连接事件，收到事件后，通过Accept处理连接事件
+		2）当Acceptor处理连接事件后，MainReactor就将这个连接分配给SubReactor
+		3）SubReactor将连接加入到连接队列进行监听，并创建handler进行事件处理
+		4）当由新得事件发生时，subReactor就会调用对应的handler进行处理
+		5）handler通过read读取数据后会分发给worker线程池
+		6）worker线程池会分配独立的worker线程进行业务处理，并返回结果
+		7）handler收到响应的结果后，使用send将结果返回给client
+		8）ractor主线程可以对应多个reactor子线程
+		
+		
+reactor模式具有的有点：
+	1）响应快，虽然reactor本身时同步的，但不必为单个同步时间阻塞
+	2）可以最大程度的避免复杂的多线程及同步问题，且避免了多线程的切换开销
+	3）扩展性好，可以方便的通过增加reactor的实例个数来充分利用CPU资源
+	4）服用性好，reactor模型本身与具体事件处理逻辑无关，具有很高的复用性
+	
+	
+	
+netty模型
+	1）Netty抽象出两组线程池BossGroup专门负责接收客户端的连接，workerGroup专门负责网络的读写
+	2）BossGroup和WorkerGroup的类型都是NioEventLoopGroup
+	3）NiEventLoopGroup相当于一个事件循环组，这个组中含有多个事件循环，每一个事件事件循环时NioEventLoop
+	4）NioEventLoop表示一个不断循环的执行处理任务的线程，每个NioEventLoop都有一个Selector，用于监听绑定在其上的socket网络通讯
+	5）NiEventLoopGroup可以有多个线程，即可以含有多个NiEventLoop
+	6）每个Boss NiEventLoop 执行的步骤有3步
+		1、轮询accept事件
+		2、处理accept事件，与client建立连接，生成NioSocketChannel，并将其注册到worker  NioEventLoop上的selector上
+		3、处理任务队列的任务，即runAllTasks
+	7）worker NioEventLoop循环执行的步骤
+		1、轮询read，write事件
+		2、处理I/O事件，即read，write事件。在NioSocketCHannel上进行读写操作
+		3、处理任务队列的任务，即runAllTasks
+	8）每个Worker NioEventLoop处理业务时，使用的时pipeline
+	
+	
+Netty异步模型
+	1）异步和同步是相对的。当一个异步过程调用后，调用者不能立刻得到结果。实际处理这个调用的组件在完成后，通过状态、通知和回调来通知调用者
+	2）Netty中的I/O操作都是异步的，通过bing、write、connect等操作都会简单的返回一个ChannelFuture
+	3）调用者并不能立刻获得结果，而是通过future-listener机制，用户可以方便的主动后去或者通过通知机制获得IO操作结果
+	4）Netty的异步机制是建立在future和callback之上的。callback就是回调。重点说future，它的核心思想是 假设一个方法fun，计算过程可能非常耗时，等待fun返回显然不合适。那么可以在调用
+	fun的时候返回一个future，后续可以通过future去监控方法fun的处理过程（future-listener机制）
+	
+	
+Funture说明
+	1）表示异步执行的结果，可以通过它提供的方法来检查执行是否完成
+	2）ChannelFUture是一个接口 可以添加监听器，当监听的事件发生时，就会通知到监听器
+		1、isDone判断是否完成
+		2、isSuccess判断操作是否成功
+		3、isCancelled操作时否取消
+		4、getCause操作是否异常
+		
+		
+Netty核心组件
+	ServerBootstrap Bootstrap ：netty程序的引导类，主要作用是串联netty的各个组件
+	channel
+	
+	selector：
+	ChannelHandler：
+	channelPipeline：提供ChannelHandler：的链式调用  维护了一个channelhandlercontext的双向链表，每个channelhandlercontext关联了一个ChannelHandler对象
+	
+	
+	
+==========================================================================================================================================================
+netty启动服务的本质：
+	Selector selecotr = SelectorProviderImpl.openSelector();
+	ServerSocketCahnnel serverSocketChannel = provider.openServerSocketChannel();
+	selectionKey = javaChannel().register(eventLoop().unwrappedSelector(),0,this);
+	javaChannel().bind(localAddress,config.getBlackLog());
+	selectionKey.interestOps(OP_ACCEPT);
+	
+	1.Selector是在new NioEventLoopGroup()时创建
+	2.第一次Register并不是监听OP_ACCEPT,而是0
+	3.最终监听OP_ACCEPT时通过bind完成后的fireChannelActive来触发的
+	4.NioEventLoop 是通过Register操作的执行来完成启动的
+	5.类似CHannelInitializer，一些handler可以设计成一次性的，用完就移除，例如授权。
+	
+	
+构建连接：
+	boss thread：
+		1.NioEventLoop中的Selector轮询创建连接事件（OP_ACCEPT）
+		2.创建socket channel
+		3.初始化 socket channel 并从worker group中选择一个NioEventLoop
+	worker thread：
+		1.将socket channel注册到选择的NioEventLoop的selector上
+		2.注册读事件(OP_READ)到selector上
+	接收连接本质：
+		1.selector.selector()/electorNow()发现OP_ACCEPT事件，处理
+		2.socketChannel spcketCHannel =serverSocketChannel.accept();
+		3.selectionKey=javaChannel().register(eventLoop().unwrappedSelector(),0,this);
+		4.selectionKey.interestOps(OP_READ);
+		5.创建连接的初始化和注册时通过pipelint.fireCHannelRead在ServerBootStrapAcceptor中完成的
+		6.第一次Register并不是监听OP_READ，而是0
+		7.最终监听OP_READ时通过register完成后的fireChannelAvtive（io.netty.channel.AbstractChannel.AbstractUnsafe#register0中）来触发的
+		8.worker`s NioeventLoop是通过Register操作执行来启动
+		9.接收连接的读操作，不会尝试读取更多次（16次）
+		
+接收数据：
+	多路复用器接收到OP_READ事件
+	处理OP_READ事件
+	
+	1.读取数据本质：sun.nio.ch.SocketCHannelImpl#read(java.nio.ByteBuffer)
+	2.NioSocketChannel read()是读数据，NioServerSocketChannel read()是创建连接
+	3.pipeline.fireCHannelReadComplete()；一次读事件完成
+		pipeline.fireChannelRead(ByteBuf) 一次读数据完成，一次读事件可能包含多此读数据操作
+	4.为什么最多只尝试读取16次？因为有很多的事件注册在eventLoop上，要雨露均沾
+	5.AdaptiveRecvByteBufAllocator对bytebuf的猜测：放大果断，缩小谨慎（需要连续两次判断）
+	
+	
+写事件：
+	1.写数据写不进去时，会停止写，注册一个OP_WRITER事件，来通知什么时候可以写进去了
+	2.OP_WRITE不是说有数据可写，而是说可以写进去，所以正常情况下，不能注册，否则会一直触发
+	3.批量写数据时，如果尝试写的都写进去了，接下来会尝试写更多（maxBytesPerGatheringWrite）
+	4.只要有数据写，且一直能写，则一直尝试，知道16次（writeSpinCount），写16次还没有写完，就直接sechdule一个task来继续写，而不是注册写事件来触发
+	5.待写数据太多，超过一定的水位线（write Buffer WaterMark。high（）），会将科协的标志位改成false，让应用端自己做决定要不要写
+	
+	
+断开连接
+	1.selector接收到OP_READ事件
+	2.处理OP_READ事件
+		1.接收数据
+		2.判断接收的数据代销是否<0，如果是，说明是关闭，开始执行关闭操作；
+			1）关闭channel（包括cancelSelector的key）。
+			2）清理消息：不接受新消息，fail掉所有queue中的消息
+			3）触发fireChannelInactive和fireChannelUnregistered
+	3.关闭连接的本质
+		1）AbstractInterruptibleChannel#close
+		2）selecitionKey#cancel
+	4.要点
+		1）关闭连接，会触发OP_READ事件。读取字节数是-1
+		2）数据读取进行时，强行关闭会触发IOExecption，进而执行关闭
+		3）channel的关闭包括了SelectionKey的cancel
+		
+关闭服务：
+
+
+
+--------------------------------------------------------------------------------------------------------------------------
+linux 系统参数：
+	ulimit -n [xxx]  该命令修改的数值只对当前登陆用户的目前使用环境有效，系统重启或者用户退出后就会失效，所以可以作为程序启动脚本的一部分，让它成勋启动前执行
+	
+socketChannel参数：
+	SO_SNDBUF TCP数据发送缓冲区大小
+	SO_RCVBUF TCP数据接收缓存区大小
+	SO_KEEPALIVE:TCP层keepalive  默认关闭
+	SO_REUSEADDR :地址重用，解决“Adress already in use”
+	SO_LINGER:关闭socket的延迟事件，默认禁用改方法
+	IP_TOS:
+	TCP_NODELAY:设置是否启用nagle算法：将小的碎片数据连接成更大的保温来提高发送数据
+	
+serverSocketChannel：
+	SO_RCVBUF：为Accept创建的socket channel设置
+	SO_REUSEADDR :地址重用，解决“Adress already in use”
+	SO_BACKLOG:最大的等待连接数量

@@ -1,0 +1,50 @@
+一.Tomcat 的整体架构
+需要实现两个核心功能 ：
+	1.处理Socket连接，复杂网络字节流与Request和Response对象的转化
+	2.加载和管理Servlet，以及具体处理Request请求。
+因此Tomcat设计了两个核心组件Connector和Container 来分别做这两件事情。Connector负责对外交流，Container负责内部处理。
+
+
+
+
+二.Connector（连接器）-Coyote
+	Coyote是Tomcat的连接器框架的名称，是Tomcat服务器提供的供客户端连接
+	Coyote封装了底层的网络通信（Socket请求及响应处理），为Catalina容器提供了统一的接口，使Catalina容器与具体的请求协议及I/O操作方式完全解耦。Coyote将Socket输入转换为Request对象，
+交由Catalina容器进行处理，处理完请求后，Catalina通过Coyote提供的Response对象将结果写入输出流。
+
+	Coyote作为独立的模块，只负责具体协议和IO的相关操作，与Servlet规范实现没有直接关系，因此即便是Request和Response对象也并未实现Servlet规范对应的接口，而是在Catalina中将他们
+进一步封装为ServletRequest和ServletResponse。
+
+
+
+
+
+
+三.Connector组件
+
+EndPoint：
+	endPoint：Coyote的通信端点，是通信监听的接口，具体Socket接收和发送处理器，对传输层的对象。因此EndPoint实现了TCP/IP协议。
+	Tomcat并没有EndPoint接口，而是提供了一个抽象类AbstractEndPoint，里面定义了两个内部类：Acceptor和SocketProcessor。Acceptor用于监听Socket请求。SockeProcessor用于处理接收到
+的Socket请求，它实现Runnable接口，在Run方法里调用协议处理组件Processor进行处理。为了提高处理能力，SocketProcessor被提交到线程池来执行。而这个线程池叫执行器。
+
+	
+Processor
+
+Processor：Coyote协议处理接口，如果说EndPotint是用来实现TCP/IP协议的，那么Processor就是用来实现Http协议，Processor接收来自EndPoint的Socket，读取字节流解析成Tomcat Request
+和Response对象，并通过Adpater将其提交到容器处理，Processor是对应用层协议的抽象。
+
+
+ProcessorHandler
+	coyote协议接口，通过EndPoint和Processor，实现针对具体协议的处理能力。Tomcat按照协议和I/O提供了6个实现类，AjpNioProtocol，AjpAprProtocol，AjpNioProtocol，Http11NioProtocol，
+	Http11NioProtocaol，Http11AprProtocol。我们在配置tomcat/conf/server.xml时，至少要指定具体的ProtocolHandler，当然也可以指定协议名称。如果安装了APR，那么将使用Http11AprProtocol,
+	否则使用Http11NioProtocol。
+
+
+
+Adpater
+	主要功能就是负责将Request转成ServletRequest，在调用容器的Service方法。
+	
+四.Tomcat 服务器配置
+	4.1 Server
+	4.2 Service 用于创建Service实例，默认使用org.apache.catalina.core.StandardService
+

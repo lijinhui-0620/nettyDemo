@@ -35,7 +35,7 @@ public class MyServerHandler extends ChannelInboundHandlerAdapter {
                     break;
             }
             System.out.println(ctx.channel().remoteAddress() + " 超时事件：" + eventType);
-            //TODO 当出现空闲事件时应该向客户端发送一个心跳包，设置一次发送的次数，没发送一次+1，当达到多少次之后就断开连接。当客户端触发channelActive方法时，则置为0
+
         }
     }
 }
