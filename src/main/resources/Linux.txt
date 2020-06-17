@@ -5,4 +5,7 @@ UG5J2-0ME12-M89WY-NPWXX0WQH88
 	1）桥连接，Linux可以和其他得系统通信。但可能造成ip冲突。
 	2）NAT模式，网络地址转换方式：Linux可以访问外网，不会造成ip冲突
 	3）主机模式，独立主机，不能访问外网
-	
+
+
+mysql -u root -p密码 -h 127.0.0.1 -P 端口号 --default-character-set=utf8mb4 < /data/ddpay.sql
+mysqldump -h 154.209.238.41 -P 3306 -u rjfudbuser -pHVKT8HnJMdDnzaSc --database jfu88 --add-drop-database -e --quick --routines --extended-insert --default-character-set=utf8mb4 --result-file=/data/jfu88.sql
